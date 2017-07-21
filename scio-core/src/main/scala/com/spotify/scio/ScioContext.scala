@@ -20,13 +20,15 @@
 package com.spotify.scio
 
 import java.beans.Introspector
-import java.io.File
+import java.io.{ByteArrayOutputStream, File, ObjectOutputStream}
 import java.net.{URI, URLClassLoader}
+import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.util.jar.{Attributes, JarFile}
 
 import com.google.api.services.bigquery.model.TableReference
 import com.google.datastore.v1.{Entity, Query}
+import com.google.flatbuffers.Table
 import com.google.protobuf.Message
 import com.spotify.scio.bigquery._
 import com.spotify.scio.bigquery.types.BigQueryType.HasAnnotation
@@ -472,6 +474,37 @@ class ScioContext private[scio] (val options: PipelineOptions,
         objectFile(path)
       }
     }
+
+  /**
+   * Get an SCollection for a Flatbuf file.
+   *
+   * Flatbuf messages are in-memory `Array[Byte]` which get stored directly (without serialization)
+   * in Avro files, in order to leverage Avro's block file format.
+   * @group input
+   */
+  def flatbufFile[T <: Table : ClassTag](path: String): SCollection[T] =
+    requireNotClosed {
+      if (this.isTest) {
+        this.getTestInput(FlatbufIO[T](path))
+      } else {
+        val classObj = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
+        this.avroFile[GenericRecord](path, AvroBytesUtil.schema)
+          // TODO why parDo and not map?
+          .parDo(new DoFn[GenericRecord, T] {
+            @ProcessElement
+            // scalastyle:off line.size.limit
+            private[scio] def processElement(c: DoFn[GenericRecord, T]#ProcessContext): Unit = {
+              val bb = c.element().get("bytes").asInstanceOf[ByteBuffer]
+              val className = classObj.getSimpleName
+              val getFlatbufFromBB = classObj.getMethod("getRootAs" + className, classOf[ByteBuffer])
+              val out = getFlatbufFromBB.invoke(null, bb).asInstanceOf[T]
+              c.output(out)
+            }
+            // scalastyle:on line.size.limit
+          })
+      }
+    }
+
 
   /**
    * Get an SCollection for a BigQuery SELECT query.

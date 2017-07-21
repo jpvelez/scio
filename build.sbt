@@ -225,7 +225,9 @@ lazy val scioCore: Project = Project(
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonScalaModuleVersion,
     "com.google.auto.service" % "auto-service" % autoServiceVersion,
     "me.lyh" %% "protobuf-generic" % protobufGenericVersion,
-    "junit" % "junit" % junitVersion % "provided"
+    "junit" % "junit" % junitVersion % "provided",
+    "com.github.davidmoten" % "flatbuffers-java" % "1.6.0.3",
+    "com.github.davidmoten" % "flatbuffers-compiler" % "1.6.0.3"
   )
 ).dependsOn(
   scioBigQuery
@@ -386,6 +388,22 @@ lazy val scioSchemas: Project = Project(
   // avoid accidentally deleting Avro sources
   PB.deleteTargetDirectory := false
 )
+
+//
+//val compileNative = taskKey[Unit]("compile flatbuf")
+//
+//compileNative := {
+//  val libDir = file(s"src/main/resources/")
+//  if (!libDir.exists) {
+//    libDir.mkdirs()
+//  }
+//  val lib = libDir / "libannoy.dylib"
+//  val source = file("src/main/cpp/annoyjava.cpp")
+//  val cmd = s"flatc -o ${lib.getAbsolutePath} ${source.getAbsolutePath}"
+//  println(cmd)
+//  import scala.sys.process._
+//  cmd.!
+//}
 
 lazy val scioExamples: Project = Project(
   "scio-examples",

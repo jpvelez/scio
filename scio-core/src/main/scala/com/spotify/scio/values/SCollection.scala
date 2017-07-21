@@ -22,10 +22,11 @@ package com.spotify.scio.values
 import java.io.{File, PrintStream}
 import java.lang.{Boolean => JBoolean, Double => JDouble, Iterable => JIterable}
 import java.net.URI
-import java.util.UUID
+import java.nio.ByteBuffer
 
 import com.google.api.services.bigquery.model.{TableReference, TableRow, TableSchema}
 import com.google.datastore.v1.Entity
+import com.google.flatbuffers.{FlatBufferBuilder, Table}
 import com.google.protobuf.Message
 import com.spotify.scio.ScioContext
 import com.spotify.scio.bigquery.types.BigQueryType
@@ -38,14 +39,13 @@ import com.spotify.scio.util.random.{BernoulliSampler, PoissonSampler}
 import com.twitter.algebird.{Aggregator, Monoid, Semigroup}
 import org.apache.avro.Schema
 import org.apache.avro.file.CodecFactory
-import org.apache.avro.generic.GenericRecord
+import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.specific.SpecificRecordBase
 import org.apache.beam.runners.direct.DirectRunner
 import org.apache.beam.sdk.coders.Coder
 import org.apache.beam.sdk.io.PubsubIO.PubsubMessage
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.{CreateDisposition, WriteDisposition}
 import org.apache.beam.sdk.io.gcp.{bigquery => bqio, datastore => dsio}
-import org.apache.beam.sdk.options.GcpOptions
 import org.apache.beam.sdk.transforms.DoFn.ProcessElement
 import org.apache.beam.sdk.transforms._
 import org.apache.beam.sdk.transforms.windowing._
@@ -54,14 +54,12 @@ import org.apache.beam.sdk.util.WindowingStrategy.AccumulationMode
 import org.apache.beam.sdk.values._
 import org.apache.beam.sdk.{io => gio}
 import org.joda.time.{Duration, Instant}
-import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.TreeMap
 import scala.concurrent._
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe._
-import scala.util.{Failure, Success}
 
 /** Convenience functions for creating SCollections. */
 object SCollection {
@@ -110,8 +108,8 @@ object SCollection {
  */
 sealed trait SCollection[T] extends PCollectionWrapper[T] {
 
-  import com.spotify.scio.Implicits._
   import TupleFunctions._
+  import com.spotify.scio.Implicits._
 
   // =======================================================================
   // Delegations for internal PCollection
@@ -940,6 +938,20 @@ sealed trait SCollection[T] extends PCollectionWrapper[T] {
     }
   }
 
+
+  def saveAsFlatbufFile(path: String, numShards: Int = 0)
+                       (implicit ev: T <:< Table): Future[Tap[T]] = {
+    this
+      .parDo(new DoFn[T, GenericRecord] {
+        @ProcessElement
+        private[scio] def processElement(c: DoFn[T, GenericRecord]#ProcessContext): Unit = {
+          c.output(AvroBytesRecord.fromByteBuffer(c.element().getByteBuffer()))
+        }
+      })
+      .saveAsAvroFile(path, numShards, AvroBytesUtil.schema, ".flatbuf")
+    context.makeFuture(ObjectFileTap[T](path + "/part-*"))
+  }
+
   /**
    * Save this SCollection as a BigQuery table. Note that elements must be of type
    * [[com.google.api.services.bigquery.model.TableRow TableRow]].
@@ -1211,3 +1223,18 @@ private[scio] class SCollectionImpl[T: ClassTag](val internal: PCollection[T],
 }
 
 // scalastyle:on file.size.limit
+
+object AvroBytesRecord {
+  val avroSchema: Schema = {
+    val s = Schema.createRecord("AvroBytesRecord", null, null, false)
+    s.setFields(List(
+      new Schema.Field("bytes", Schema.create(Schema.Type.BYTES), null, null.asInstanceOf[Object])
+    ).asJava)
+    s
+  }
+  def fromByteBuffer(buf: ByteBuffer): GenericRecord = {
+    val record = new GenericData.Record(avroSchema)
+    record.put("bytes", buf)
+    record
+  }
+}
