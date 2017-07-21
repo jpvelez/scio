@@ -21,6 +21,7 @@ import sbtassembly.AssemblyPlugin.autoImport._
 import com.typesafe.sbt.SbtSite.SiteKeys._
 import com.typesafe.sbt.SbtGit.GitKeys.gitRemoteRepo
 
+val asmVersion = "5.2"
 val beamVersion = "0.6.0"
 val algebirdVersion = "0.13.0"
 val annoyVersion = "0.2.5"
@@ -33,8 +34,9 @@ val chillVersion = "0.9.2"
 val circeVersion = "0.8.0"
 val commonsIoVersion = "2.5"
 val commonsMath3Version = "3.6.1"
-val csvVersion = "0.1.19"
-val elasticsearchVersion = "2.1.0"
+val csvVersion = "0.2.0"
+val elasticsearch2Version = "2.1.0"
+val elasticsearch5Version = "5.5.0"
 val guavaVersion = "20.0"
 val hadoopVersion = "2.7.3"
 val hamcrestVersion = "1.3"
@@ -47,16 +49,17 @@ val junitVersion = "4.12"
 val junitInterfaceVersion = "0.11"
 val mockitoVersion = "1.10.19"
 val nettyTcNativeVersion = "1.1.33.Fork18"
+val protobufVersion = "3.3.1"
 val protobufGenericVersion = "0.2.0"
 val scalaMacrosVersion = "2.1.0"
 val scalaMeterVersion = "0.8.2"
 val scalacheckShapelessVersion = "1.1.5"
 val scalacheckVersion = "1.13.5"
 val scalatestVersion = "3.0.3"
-val shapelessDatatypeVersion = "0.1.2"
+val shapelessDatatypeVersion = "0.1.6"
 val slf4jVersion = "1.7.25"
 val sparkeyVersion = "2.1.3"
-val tensorflowVersion = "1.1.0"
+val tensorFlowVersion = "1.2.0"
 
 val scalaMeterFramework = new TestFramework("org.scalameter.ScalaMeterFramework")
 
@@ -69,6 +72,11 @@ val commonSettings = Sonatype.sonatypeSettings ++ assemblySettings ++ Seq(
   scalacOptions in (Compile, doc) ++= Seq("-skip-packages", "org.apache.beam"),
   javacOptions                    ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint:unchecked"),
   javacOptions in (Compile, doc)  := Seq("-source", "1.8"),
+
+  // protobuf-lite is an older subset of protobuf-java and causes issues
+  excludeDependencies += "com.google.protobuf" % "protobuf-lite",
+
+  resolvers += Resolver.sonatypeRepo("public"),
 
   scalastyleSources in Compile ++= (unmanagedSourceDirectories in Test).value,
   testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v"),
@@ -158,6 +166,7 @@ lazy val assemblySettings = Seq(
     case s if s.endsWith(".properties") => MergeStrategy.filterDistinctLines
     case s if s.endsWith("pom.xml") => MergeStrategy.last
     case s if s.endsWith(".class") => MergeStrategy.last
+    case s if s.endsWith(".proto") => MergeStrategy.last
     case s if s.endsWith("libjansi.jnilib") => MergeStrategy.last
     case s if s.endsWith("jansi.dll") => MergeStrategy.rename
     case s if s.endsWith("libjansi.so") => MergeStrategy.rename
@@ -191,6 +200,7 @@ lazy val root: Project = Project(
 ).enablePlugins(ScalaUnidocPlugin).settings(
   commonSettings ++ siteSettings ++ noPublishSettings,
   unidocProjectFilter in (ScalaUnidoc, unidoc) := inAnyProject
+    -- inProjects(scioCassandra2) -- inProjects(scioElasticsearch2)
     -- inProjects(scioRepl) -- inProjects(scioSchemas) -- inProjects(scioExamples),
   aggregate in assembly := false
 ).aggregate(
@@ -198,13 +208,17 @@ lazy val root: Project = Project(
   scioTest,
   scioBigQuery,
   scioBigtable,
-  scioElasticsearch,
+  scioCassandra2,
+  scioCassandra3,
+  scioElasticsearch2,
+  scioElasticsearch5,
   scioExtra,
   scioHdfs,
   scioJdbc,
   scioRepl,
   scioExamples,
-  scioSchemas
+  scioSchemas,
+  scioTensorFlow
 )
 
 lazy val scioCore: Project = Project(
@@ -212,8 +226,8 @@ lazy val scioCore: Project = Project(
   file("scio-core")
 ).settings(
   commonSettings ++ macroSettings,
-  description := "Scio - A Scala API for Google Cloud Dataflow",
-    libraryDependencies ++= beamDependencies,
+  description := "Scio - A Scala API for Apache Beam and Google Cloud Dataflow",
+  libraryDependencies ++= beamDependencies,
   libraryDependencies ++= Seq(
     "com.twitter" %% "algebird-core" % algebirdVersion,
     "com.twitter" %% "chill" % chillVersion,
@@ -221,11 +235,14 @@ lazy val scioCore: Project = Project(
     "com.twitter" % "chill-protobuf" % chillVersion,
     "commons-io" % "commons-io" % commonsIoVersion,
     "org.apache.commons" % "commons-math3" % commonsMath3Version,
-    "org.tensorflow" % "proto" % tensorflowVersion,
+    "org.tensorflow" % "proto" % tensorFlowVersion,
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonScalaModuleVersion,
     "com.google.auto.service" % "auto-service" % autoServiceVersion,
+    "com.google.protobuf" % "protobuf-java" % protobufVersion,
     "me.lyh" %% "protobuf-generic" % protobufGenericVersion,
+    "org.ow2.asm" % "asm" % asmVersion,
     "junit" % "junit" % junitVersion % "provided",
+    "com.google.auto.value" % "auto-value" % autoValueVersion % "provided",
     "com.github.davidmoten" % "flatbuffers-java" % "1.6.0.3",
     "com.github.davidmoten" % "flatbuffers-compiler" % "1.6.0.3"
   )
@@ -248,7 +265,7 @@ lazy val scioTest: Project = Project(
     "com.spotify" % "annoy" % annoyVersion % "test",
     "com.spotify.sparkey" % "sparkey" % sparkeyVersion % "test",
     "com.novocode" % "junit-interface" % junitInterfaceVersion,
-    "junit" % "junit" % junitVersion
+    "junit" % "junit" % junitVersion % "test"
   ),
   addCompilerPlugin(paradiseDependency)
 ).configs(
@@ -264,7 +281,7 @@ lazy val scioBigQuery: Project = Project(
 ).settings(
   commonSettings ++ macroSettings ++ itSettings,
   description := "Scio add-on for Google BigQuery",
-    libraryDependencies ++= beamDependencies,
+  libraryDependencies ++= beamDependencies,
   libraryDependencies ++= Seq(
     "commons-io" % "commons-io" % commonsIoVersion,
     "org.apache.beam" % "beam-sdks-java-io-google-cloud-platform" % beamVersion,
@@ -295,16 +312,67 @@ lazy val scioBigtable: Project = Project(
   scioTest % "it"
 ).configs(IntegrationTest)
 
-lazy val scioElasticsearch: Project = Project(
-  "scio-elasticsearch",
-  file("scio-elasticsearch")
+lazy val scioCassandra2: Project = Project(
+  "scio-cassandra2",
+  file("scio-cassandra2")
+).settings(
+  commonSettings ++ itSettings,
+  description := "Scio add-on for Apache Cassandra 2.x",
+  scalaSource in Compile := (baseDirectory in ThisBuild).value / "scio-cassandra3/src/main/scala",
+  libraryDependencies ++= Seq(
+    "com.datastax.cassandra" % "cassandra-driver-core" % "2.1.10.3",
+    "org.apache.cassandra" % "cassandra-all" % "2.0.17",
+    "org.apache.hadoop" % "hadoop-client" % hadoopVersion
+  )
+).dependsOn(
+  scioCore,
+  scioTest % "it"
+).configs(IntegrationTest)
+
+lazy val scioCassandra3: Project = Project(
+  "scio-cassandra3",
+  file("scio-cassandra3")
+).settings(
+  commonSettings ++ itSettings,
+  description := "Scio add-on for Apache Cassandra 3.x",
+  libraryDependencies ++= Seq(
+    "com.datastax.cassandra" % "cassandra-driver-core" % "3.2.0",
+    ("org.apache.cassandra" % "cassandra-all" % "3.11.0")
+      .exclude("ch.qos.logback", "logback-classic")
+      .exclude("org.slf4j", "log4j-over-slf4j"),
+    "org.apache.hadoop" % "hadoop-client" % hadoopVersion
+  )
+).dependsOn(
+  scioCore,
+  scioTest % "it"
+).configs(IntegrationTest)
+
+lazy val scioElasticsearch2: Project = Project(
+  "scio-elasticsearch2",
+  file("scio-elasticsearch2")
 ).settings(
   commonSettings,
   description := "Scio add-on for writing to Elasticsearch",
   libraryDependencies ++= Seq(
     "com.google.guava" % "guava" % guavaVersion,
     "joda-time" % "joda-time" % jodaTimeVersion,
-    "org.elasticsearch" % "elasticsearch" % elasticsearchVersion
+    "org.elasticsearch" % "elasticsearch" % elasticsearch2Version
+  )
+).dependsOn(
+  scioCore,
+  scioTest % "test"
+)
+
+lazy val scioElasticsearch5: Project = Project(
+  "scio-elasticsearch5",
+  file("scio-elasticsearch5")
+).settings(
+  commonSettings,
+  description := "Scio add-on for writing to Elasticsearch",
+  libraryDependencies ++= Seq(
+    "com.google.guava" % "guava" % guavaVersion,
+    "joda-time" % "joda-time" % jodaTimeVersion,
+    "org.elasticsearch.client" % "transport" % elasticsearch5Version
   )
 ).dependsOn(
   scioCore,
@@ -335,6 +403,21 @@ lazy val scioExtra: Project = Project(
   scioCore,
   scioTest % "it,test->test"
 ).configs(IntegrationTest)
+
+lazy val scioTensorFlow: Project = Project(
+  "scio-tensorflow",
+  file("scio-tensorflow")
+).settings(
+  commonSettings,
+  description := "Scio add-on for TensorFlow",
+  libraryDependencies ++= Seq(
+    "org.tensorflow" % "tensorflow" % tensorFlowVersion,
+    "org.tensorflow" % "proto" % tensorFlowVersion
+  )
+).dependsOn(
+  scioCore,
+  scioTest % "test->test"
+)
 
 lazy val scioHdfs: Project = Project(
   "scio-hdfs",
@@ -373,7 +456,7 @@ lazy val scioSchemas: Project = Project(
   "scio-schemas",
   file("scio-schemas")
 ).settings(
-  commonSettings ++ sbtavro.SbtAvro.avroSettings ++ noPublishSettings,
+  commonSettings ++ noPublishSettings,
   version in avroConfig := avroVersion, // Set avro version used by sbt-avro
   description := "Avro/Proto schemas for testing",
   // suppress warnings
@@ -411,7 +494,9 @@ lazy val scioExamples: Project = Project(
 ).settings(
   commonSettings ++ noPublishSettings,
   libraryDependencies ++= Seq(
-    "me.lyh" %% "shapeless-datatype-datastore_1.3" % "0.1.2",
+    "me.lyh" %% "shapeless-datatype-avro" % shapelessDatatypeVersion,
+    "me.lyh" %% "shapeless-datatype-datastore_1.3" % shapelessDatatypeVersion,
+    "me.lyh" %% "shapeless-datatype-tensorflow" % shapelessDatatypeVersion,
     "mysql" % "mysql-connector-java" % "5.1.+",
     "com.google.cloud.sql" % "mysql-socket-factory" % "1.0.2",
     "org.slf4j" % "slf4j-simple" % slf4jVersion,
@@ -426,8 +511,9 @@ lazy val scioExamples: Project = Project(
   scioSchemas,
   scioHdfs,
   scioJdbc,
-  scioElasticsearch,
+  scioElasticsearch5,
   scioExtra,
+  scioTensorFlow,
   scioTest % "test"
 )
 
@@ -519,7 +605,8 @@ val javaMappings = beamMappings ++ Seq(
   ("com.google.apis", "google-api-services-bigquery", "https://developers.google.com/resources/api-libraries/documentation/bigquery/v2/java/latest"),
   // FIXME: investigate why joda-time won't link
   ("joda-time", "joda-time", "http://www.joda.org/joda-time/apidocs"),
-  ("org.apache.avro", "avro", "https://avro.apache.org/docs/current/api/java"))
+  ("org.apache.avro", "avro", "https://avro.apache.org/docs/current/api/java"),
+  ("org.tensorflow", "libtensorflow", "https://www.tensorflow.org/api_docs/java/reference"))
 val scalaMappings = Seq(
   ("com.twitter", "algebird-core", "http://twitter.github.io/algebird/api"),
   ("org.scalanlp", "breeze", "http://www.scalanlp.org/api/breeze/"),

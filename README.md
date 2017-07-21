@@ -18,19 +18,17 @@ Scio 0.3.0 and future versions depend on Apache Beam (`org.apache.beam`) while e
 # Features
 
 - Scala API close to that of Spark and Scalding core APIs
-- Unified batch and streaming programming model<sup>1, 2</sup>
-- Fully managed service<sup>2</sup>
-- Integration with Google Cloud products: Cloud Storage, BigQuery, Pub/Sub, Datastore, Bigtable<sup>2</sup>
-- HDFS source/sink
+- Unified batch and streaming programming model
+- Fully managed service<sup>*</sup>
+- Integration with Google Cloud products: Cloud Storage, BigQuery, Pub/Sub, Datastore, Bigtable
+- HDFS, JDBC, [TensorFlow](http://tensorflow.org/) TFRecords, Cassandra and Elasticsearch I/O
 - Interactive mode with Scio REPL
 - Type safe BigQuery
 - Integration with [Algebird](https://github.com/twitter/algebird) and [Breeze](https://github.com/scalanlp/breeze)
 - Pipeline orchestration with [Scala Futures](http://docs.scala-lang.org/overviews/core/futures.html)
 - Distributed cache
 
-<sup>1</sup> provided by Apache Beam
-
-<sup>2</sup> provided by Google Cloud Dataflow
+<sup>*</sup> provided by Google Cloud Dataflow
 
 # Quick Start
 
@@ -53,11 +51,16 @@ Scio includes the following artifacts:
 
 - `scio-core`: core library
 - `scio-test`: test utilities, add to your project as a "test" dependency
-- `scio-bigquery`: Add-on for BigQuery, included in `scio-core` but can also be used standalone
-- `scio-bigtable`: Add-on for Bigtable
-- `scio-extra`: Extra utilities for working with collections, Breeze, etc.
-- `scio-hdfs`: Add-on for HDFS IO
-- `scio-jdbc`: Add-on for JDBC IO
+- `scio-bigquery`: add-on for BigQuery, included in `scio-core` but can also be used standalone
+- `scio-bigtable`: add-on for Bigtable
+- `scio-cassandra2`: add-on for Cassandra 2.x
+- `scio-cassandra3`: add-on for Cassandra 3.x
+- `scio-elasticsearch2`: add-on for Elasticsearch 2.x
+- `scio-elasticsearch5`: add-on for Elasticsearch 5.x
+- `scio-extra`: extra utilities for working with collections, Breeze, etc.
+- `scio-hdfs`: add-on for HDFS IO
+- `scio-jdbc`: add-on for JDBC IO
+- `scio-tensorflow`: add-on for TensorFlow TFRecords IO and prediction
 
 # License
 

@@ -136,7 +136,7 @@ class TapTest extends TapSpec {
         .parallelize(Seq("a", "b", "c"))
         .map(s => ByteBuffer.wrap(s.getBytes))
         .saveAsAvroFile(dir.getPath, schema = new Schema.Parser().parse("\"bytes\""))
-    }.map(b => new String(b.array()))
+    }.map(bb => new String(bb.array(), bb.position(), bb.limit()))
     verifyTap(t, Set("a", "b", "c"))
     FileUtils.deleteDirectory(dir)
   }
@@ -188,22 +188,6 @@ class TapTest extends TapSpec {
         os.close()
       }
       verifyTap(TextTap(ScioUtil.addPartSuffix(dir.getPath, ext)), data.flatten.toSet)
-      FileUtils.deleteDirectory(dir)
-    }
-  }
-
-  it should "support saveAsTFRecordFile" in {
-    val data = Seq.fill(100)(UUID.randomUUID().toString)
-    import TFRecordOptions.CompressionType._
-    for (compressionType <- Seq(NONE, ZLIB, GZIP)) {
-      val dir = tmpDir
-      val t = runWithFileFuture {
-        _
-          .parallelize(data)
-          .map(_.getBytes)
-          .saveAsTfRecordFile(dir.getPath, tfRecordOptions = TFRecordOptions(compressionType))
-      }
-      verifyTap(t.map(new String(_)), data.toSet)
       FileUtils.deleteDirectory(dir)
     }
   }

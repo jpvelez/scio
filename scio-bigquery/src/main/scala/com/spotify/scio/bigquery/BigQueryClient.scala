@@ -19,7 +19,6 @@ package com.spotify.scio.bigquery
 
 import java.io.{File, FileInputStream, StringReader}
 import java.util.UUID
-import java.util.regex.Pattern
 
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.javanet.NetHttpTransport
@@ -39,6 +38,7 @@ import com.spotify.scio.bigquery.types.BigQueryType.HasAnnotation
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.{CreateDisposition, WriteDisposition}
 import org.apache.beam.sdk.io.gcp.bigquery.{BigQueryIO, PatchedBigQueryTableRowIterator}
 import org.apache.beam.sdk.options.GcpOptions.DefaultProjectFactory
+import org.apache.beam.sdk.options.{GcsOptions, PipelineOptionsFactory}
 import org.apache.beam.sdk.util.BigQueryTableInserter
 import org.apache.commons.io.FileUtils
 import org.joda.time.format.{DateTimeFormat, PeriodFormatterBuilder}
@@ -221,12 +221,11 @@ class BigQueryClient private (private val projectId: String,
     val b = Seq.newBuilder[TableReference]
     val req = bigquery.tables().list(projectId, datasetId)
     var rep = req.execute()
-    rep.getTables.asScala.foreach(t => b += t.getTableReference)
+    Option(rep.getTables).foreach(_.asScala.foreach(b += _.getTableReference))
     while (rep.getNextPageToken != null) {
       rep = req.setPageToken(rep.getNextPageToken).execute()
-      if (rep.getTables != null) {
-        rep.getTables.asScala.foreach(t => b += t.getTableReference)
-      }
+      Option(rep.getTables)
+        .foreach(_.asScala.foreach(b += _.getTableReference))
     }
     b.result()
   }
@@ -255,9 +254,14 @@ class BigQueryClient private (private val projectId: String,
   def writeTableRows(table: TableReference, rows: List[TableRow], schema: TableSchema,
                      writeDisposition: WriteDisposition,
                      createDisposition: CreateDisposition): Unit = {
-    val inserter = new BigQueryTableInserter(bigquery)
-    inserter.getOrCreateTable(table, writeDisposition, createDisposition, schema)
-    inserter.insertAll(table, rows.asJava)
+    try {
+      val inserter = new BigQueryTableInserter(bigquery)
+      inserter.getOrCreateTable(table, writeDisposition, createDisposition, schema)
+      inserter.insertAll(table, rows.asJava)
+    } finally {
+      val options = PipelineOptionsFactory.create().as(classOf[GcsOptions])
+      Option(options.getExecutorService).foreach(_.shutdown())
+    }
   }
 
   /** Write rows to a table. */
@@ -395,9 +399,10 @@ class BigQueryClient private (private val projectId: String,
         }
       } else {
         logger.info(s"Cache invalid for query: `$sqlQuery`")
-        logger.info(s"New destination table: ${BigQueryIO.toTableSpec(temp)}")
-        setCacheDestinationTable(sqlQuery, temp)
-        delayedQueryJob(sqlQuery, temp, flattenResults)
+        val newTemp = temporaryTable(extractLocation(sqlQuery).getOrElse(DEFAULT_LOCATION))
+        logger.info(s"New destination table: ${BigQueryIO.toTableSpec(newTemp)}")
+        setCacheDestinationTable(sqlQuery, newTemp)
+        delayedQueryJob(sqlQuery, newTemp, flattenResults)
       }
     } catch {
       case NonFatal(e: GoogleJsonResponseException) if isInvalidQuery(e) => throw e

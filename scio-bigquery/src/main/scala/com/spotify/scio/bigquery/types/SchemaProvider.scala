@@ -72,14 +72,12 @@ private[types] object SchemaProvider {
 
   private def toField(f: (Symbol, Option[String])): TableFieldSchema = {
     val (symbol, desc) = f
-    // TODO: figure out why there's trailing spaces
-    val name = symbol.name.toString.trim
-    val tpe = symbol.typeSignature
-    val TypeRef(_, _, args) = tpe
+    val name = symbol.name.toString
+    val tpe = symbol.asMethod.returnType
 
     val (mode, valType) = tpe match {
-      case t if t.erasure =:= typeOf[Option[_]].erasure => ("NULLABLE", args.head)
-      case t if t.erasure =:= typeOf[List[_]].erasure => ("REPEATED", args.head)
+      case t if t.erasure =:= typeOf[Option[_]].erasure => ("NULLABLE", tpe.typeArgs.head)
+      case t if t.erasure =:= typeOf[List[_]].erasure => ("REPEATED", tpe.typeArgs.head)
       case _ => ("REQUIRED", tpe)
     }
     val (tpeParam, nestedParam) = rawType(valType)
