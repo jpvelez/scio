@@ -21,6 +21,10 @@ import com.google.flatbuffers.FlatBufferBuilder
 import com.spotify.scio.ContextAndArgs
 import org.apache.beam.examples.Endsong
 
+/*
+sbt
+  runMain com.spotify.scio.examples.extra.FlatbufWriteExample --output=endsong.fb
+*/
 object FlatbufWriteExample {
 
   def makeEndSong(userId: String, playTrack: String, msPlayed: Int): Endsong = {

@@ -21,13 +21,18 @@ import com.google.flatbuffers.FlatBufferBuilder
 import com.spotify.scio.ContextAndArgs
 import org.apache.beam.examples.Endsong
 
+/*
+sbt
+  runMain com.spotify.scio.examples.extra.FlatbufReadExample
+  --intput=endsong.fb/<star>.avro --output=endsong-text
+ */
 object FlatbufReadExample {
 
   def main(cmdlineArgs: Array[String]): Unit = {
     val (sc, args) = ContextAndArgs(cmdlineArgs)
     sc.flatbufFile[Endsong](args("input"))
       .map((es: Endsong) => (es.userId(), es.playTrack(), es.msPlayed()))
-      .saveAsTextFile("flatbufIOExample.txt")
+      .saveAsTextFile(args("output"))
     sc.close()
 
   }
