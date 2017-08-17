@@ -21,47 +21,45 @@ import sbtassembly.AssemblyPlugin.autoImport._
 import com.typesafe.sbt.SbtSite.SiteKeys._
 import com.typesafe.sbt.SbtGit.GitKeys.gitRemoteRepo
 
-val asmVersion = "5.2"
 val beamVersion = "0.6.0"
+
 val algebirdVersion = "0.13.0"
 val annoyVersion = "0.2.5"
+val asmVersion = "4.5"
 val autoServiceVersion = "1.0-rc3"
-val autoValueVersion = "1.3"
+val autoValueVersion = "1.4.1"
 val avroVersion = "1.8.1"
 val bigtableVersion = "0.9.5.1"
-val breezeVersion ="0.13"
+val breezeVersion ="0.13.1"
 val chillVersion = "0.9.2"
 val circeVersion = "0.8.0"
 val commonsIoVersion = "2.5"
 val commonsMath3Version = "3.6.1"
-val csvVersion = "0.2.0"
 val elasticsearch2Version = "2.1.0"
 val elasticsearch5Version = "5.5.0"
 val guavaVersion = "20.0"
 val hadoopVersion = "2.7.3"
 val hamcrestVersion = "1.3"
-val jacksonScalaModuleVersion = "2.8.8"
+val jacksonScalaModuleVersion = "2.8.9"
 val javaLshVersion = "0.10"
 val jlineVersion = "2.14.3"
 val jodaConvertVersion = "1.8.1"
 val jodaTimeVersion = "2.9.9"
-val junitVersion = "4.12"
 val junitInterfaceVersion = "0.11"
+val junitVersion = "4.12"
+val kantanCsvVersion = "0.2.1"
 val mockitoVersion = "1.10.19"
 val nettyTcNativeVersion = "1.1.33.Fork18"
+val protobufGenericVersion = "0.2.1"
 val protobufVersion = "3.3.1"
-val protobufGenericVersion = "0.2.0"
-val scalaMacrosVersion = "2.1.0"
-val scalaMeterVersion = "0.8.2"
-val scalacheckShapelessVersion = "1.1.5"
+val scalacheckShapelessVersion = "1.1.6"
 val scalacheckVersion = "1.13.5"
+val scalaMacrosVersion = "2.1.0"
 val scalatestVersion = "3.0.3"
 val shapelessDatatypeVersion = "0.1.6"
 val slf4jVersion = "1.7.25"
 val sparkeyVersion = "2.1.3"
-val tensorFlowVersion = "1.2.0"
-
-val scalaMeterFramework = new TestFramework("org.scalameter.ScalaMeterFramework")
+val tensorFlowVersion = "1.2.1"
 
 val commonSettings = Sonatype.sonatypeSettings ++ assemblySettings ++ Seq(
   organization       := "com.spotify",
@@ -69,7 +67,7 @@ val commonSettings = Sonatype.sonatypeSettings ++ assemblySettings ++ Seq(
   scalaVersion       := "2.11.11",
   crossScalaVersions := Seq("2.11.11"),
   scalacOptions                   ++= Seq("-Xmax-classfile-name", "100", "-target:jvm-1.8", "-deprecation", "-feature", "-unchecked"),
-  scalacOptions in (Compile, doc) ++= Seq("-skip-packages", "org.apache.beam"),
+  scalacOptions in (Compile, doc) ++= Seq("-skip-packages", "org.apache"),
   javacOptions                    ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint:unchecked"),
   javacOptions in (Compile, doc)  := Seq("-source", "1.8"),
 
@@ -197,7 +195,7 @@ lazy val macroSettings = Seq(
 lazy val root: Project = Project(
   "scio",
   file(".")
-).enablePlugins(ScalaUnidocPlugin).settings(
+).enablePlugins(GhpagesPlugin, ScalaUnidocPlugin, SiteScaladocPlugin).settings(
   commonSettings ++ siteSettings ++ noPublishSettings,
   unidocProjectFilter in (ScalaUnidoc, unidoc) := inAnyProject
     -- inProjects(scioCassandra2) -- inProjects(scioElasticsearch2)
@@ -206,6 +204,7 @@ lazy val root: Project = Project(
 ).aggregate(
   scioCore,
   scioTest,
+  scioAvro,
   scioBigQuery,
   scioBigtable,
   scioCassandra2,
@@ -215,10 +214,10 @@ lazy val root: Project = Project(
   scioExtra,
   scioHdfs,
   scioJdbc,
-  scioRepl,
-  scioExamples,
+  scioTensorFlow,
   scioSchemas,
-  scioTensorFlow
+  scioExamples,
+  scioRepl
 )
 
 lazy val scioCore: Project = Project(
@@ -238,15 +237,18 @@ lazy val scioCore: Project = Project(
     "org.tensorflow" % "proto" % tensorFlowVersion,
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonScalaModuleVersion,
     "com.google.auto.service" % "auto-service" % autoServiceVersion,
+    "com.google.auto.value" % "auto-value" % autoValueVersion % "provided",
+    "com.google.guava" % "guava" % guavaVersion,
     "com.google.protobuf" % "protobuf-java" % protobufVersion,
     "me.lyh" %% "protobuf-generic" % protobufGenericVersion,
-    "org.ow2.asm" % "asm" % asmVersion,
     "junit" % "junit" % junitVersion % "provided",
     "com.google.auto.value" % "auto-value" % autoValueVersion % "provided",
     "com.github.davidmoten" % "flatbuffers-java" % "1.6.0.3",
-    "com.github.davidmoten" % "flatbuffers-compiler" % "1.6.0.3"
+    "com.github.davidmoten" % "flatbuffers-compiler" % "1.6.0.3",
+    "org.apache.xbean" % "xbean-asm5-shaded" % asmVersion
   )
 ).dependsOn(
+  scioAvro,
   scioBigQuery
 )
 
@@ -274,6 +276,24 @@ lazy val scioTest: Project = Project(
   scioCore,
   scioSchemas % "test"
 )
+
+lazy val scioAvro: Project = Project(
+  "scio-avro",
+  file("scio-avro")
+).settings(
+  commonSettings ++ macroSettings ++ itSettings,
+  description := "Scio add-on for working with Avro",
+  libraryDependencies ++= beamDependencies,
+  libraryDependencies ++= Seq(
+    "org.apache.avro" % "avro" % avroVersion,
+    "org.apache.beam" % "beam-sdks-java-io-google-cloud-platform" % beamVersion,
+    "org.slf4j" % "slf4j-api" % slf4jVersion,
+    "org.slf4j" % "slf4j-simple" % slf4jVersion % "test,it",
+    "org.scalatest" %% "scalatest" % scalatestVersion % "test,it",
+    "com.github.alexarchambault" %% "scalacheck-shapeless_1.13" % scalacheckShapelessVersion % "test",
+    "me.lyh" %% "shapeless-datatype-core" % shapelessDatatypeVersion % "test"
+  )
+).configs(IntegrationTest)
 
 lazy val scioBigQuery: Project = Project(
   "scio-bigquery",
@@ -354,7 +374,6 @@ lazy val scioElasticsearch2: Project = Project(
   commonSettings,
   description := "Scio add-on for writing to Elasticsearch",
   libraryDependencies ++= Seq(
-    "com.google.guava" % "guava" % guavaVersion,
     "joda-time" % "joda-time" % jodaTimeVersion,
     "org.elasticsearch" % "elasticsearch" % elasticsearch2Version
   )
@@ -370,7 +389,6 @@ lazy val scioElasticsearch5: Project = Project(
   commonSettings,
   description := "Scio add-on for writing to Elasticsearch",
   libraryDependencies ++= Seq(
-    "com.google.guava" % "guava" % guavaVersion,
     "joda-time" % "joda-time" % jodaTimeVersion,
     "org.elasticsearch.client" % "transport" % elasticsearch5Version
   )
@@ -386,7 +404,6 @@ lazy val scioExtra: Project = Project(
   commonSettings ++ itSettings,
   description := "Scio extra utilities",
   libraryDependencies ++= Seq(
-    "com.google.guava" % "guava" % guavaVersion,
     "com.spotify.sparkey" % "sparkey" % sparkeyVersion,
     "com.twitter" %% "algebird-core" % algebirdVersion,
     "org.scalanlp" %% "breeze" % breezeVersion,
@@ -403,21 +420,6 @@ lazy val scioExtra: Project = Project(
   scioCore,
   scioTest % "it,test->test"
 ).configs(IntegrationTest)
-
-lazy val scioTensorFlow: Project = Project(
-  "scio-tensorflow",
-  file("scio-tensorflow")
-).settings(
-  commonSettings,
-  description := "Scio add-on for TensorFlow",
-  libraryDependencies ++= Seq(
-    "org.tensorflow" % "tensorflow" % tensorFlowVersion,
-    "org.tensorflow" % "proto" % tensorFlowVersion
-  )
-).dependsOn(
-  scioCore,
-  scioTest % "test->test"
-)
 
 lazy val scioHdfs: Project = Project(
   "scio-hdfs",
@@ -450,6 +452,21 @@ lazy val scioJdbc: Project = Project(
 ).dependsOn(
   scioCore,
   scioTest % "test"
+)
+
+lazy val scioTensorFlow: Project = Project(
+  "scio-tensorflow",
+  file("scio-tensorflow")
+).settings(
+  commonSettings,
+  description := "Scio add-on for TensorFlow",
+  libraryDependencies ++= Seq(
+    "org.tensorflow" % "tensorflow" % tensorFlowVersion,
+    "org.tensorflow" % "proto" % tensorFlowVersion
+  )
+).dependsOn(
+  scioCore,
+  scioTest % "test->test"
 )
 
 lazy val scioSchemas: Project = Project(
@@ -527,30 +544,12 @@ lazy val scioRepl: Project = Project(
     "jline" % "jline" % jlineVersion,
     "org.scala-lang" % "scala-compiler" % scalaVersion.value,
     "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-    "com.nrinaudo" %% "kantan.csv" % csvVersion,
+    "com.nrinaudo" %% "kantan.csv" % kantanCsvVersion,
     paradiseDependency
   ),
   assemblyJarName in assembly := s"scio-repl-${version.value}.jar"
 ).dependsOn(
   scioCore,
-  scioExtra
-)
-
-lazy val scioBench: Project = Project(
-  "scio-bench",
-  file("scio-bench")
-).settings(
-  commonSettings ++ noPublishSettings,
-  description := "Scio micro-benchmarks",
-  libraryDependencies ++= Seq(
-    "com.storm-enroute" %% "scalameter" % scalaMeterVersion % "test",
-    "com.google.guava" % "guava" % guavaVersion % "test"
-  ),
-  testFrameworks += scalaMeterFramework,
-  testOptions += Tests.Argument(scalaMeterFramework, "-silent"),
-  parallelExecution in Test := false,
-  logBuffered := false
-).dependsOn(
   scioExtra
 )
 
@@ -572,9 +571,10 @@ def fixJavaDocLinks(bases: Seq[String], doc: String): String = {
   }
 }
 
-lazy val siteSettings = site.settings ++ ghpages.settings ++ Seq(
+lazy val siteSettings = Seq(
   autoAPIMappings := true,
-  site.addMappingsToSiteDir(mappings in (ScalaUnidoc, packageDoc), ""),
+  siteSubdirName in ScalaUnidoc := "",
+  addMappingsToSiteDir(mappings in (ScalaUnidoc, packageDoc), siteSubdirName in ScalaUnidoc),
   gitRemoteRepo := "git@github.com:spotify/scio.git",
   makeSite := {
     // fix JavaDoc links before makeSite
@@ -605,7 +605,7 @@ val javaMappings = beamMappings ++ Seq(
   ("com.google.apis", "google-api-services-bigquery", "https://developers.google.com/resources/api-libraries/documentation/bigquery/v2/java/latest"),
   // FIXME: investigate why joda-time won't link
   ("joda-time", "joda-time", "http://www.joda.org/joda-time/apidocs"),
-  ("org.apache.avro", "avro", "https://avro.apache.org/docs/current/api/java"),
+  ("org.apache.avro", "avro", s"https://avro.apache.org/docs/$avroVersion/api/java"),
   ("org.tensorflow", "libtensorflow", "https://www.tensorflow.org/api_docs/java/reference"))
 val scalaMappings = Seq(
   ("com.twitter", "algebird-core", "http://twitter.github.io/algebird/api"),
